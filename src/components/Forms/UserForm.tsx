@@ -1,7 +1,6 @@
 import { useForm } from 'react-hook-form';
 import Button from '../UI/Button';
 import Input from '../UI/Input';
-import Alert from '../UI/Alert';
 
 export interface UserFormData {
   name: string;
