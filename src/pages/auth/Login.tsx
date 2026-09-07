@@ -31,7 +31,7 @@ export default function Login() {
         setUser(response.data.user);
         if (response.data.user.role === 'admin') {
           navigate('/admin/dashboard');
-        } else if (response.data.user.role === 'kasir') {
+        } else if (response.data.user.role === 'kasir' || response.data.user.role === 'koki') {
           navigate('/kasir/dashboard');
         } else {
           navigate('/login');

@@ -43,7 +43,7 @@ function App() {
         <Route
           path="/kasir/dashboard"
           element={
-            <ProtectedRoute allowedRoles={['kasir']}>
+            <ProtectedRoute allowedRoles={['kasir', 'koki']}>
               <KasirDashboard />
             </ProtectedRoute>
           }
