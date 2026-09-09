@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createTransaction, type CreateTransactionRequest } from '../../services/transactionService';
+import { getActivePromos, validatePromo, type Promo } from '../../services/promoService';
 import Card from '../../components/UI/Card';
+import DateTimeWidget from '../../components/UI/DateTimeWidget';
 import Input from '../../components/UI/Input';
 import Button from '../../components/UI/Button';
 import Alert from '../../components/UI/Alert';
-import { Wallet, Banknote, ArrowLeft, Info } from 'lucide-react';
+import { Wallet, Banknote, ArrowLeft, Info, Tag, X } from 'lucide-react';
 import type { Menu } from '../../types';
 
 interface CartItem {
@@ -22,14 +24,39 @@ export default function Checkout() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Promo states
+  const [activePromos, setActivePromos] = useState<Promo[]>([]);
+  const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
+  const [promoDiscount, setPromoDiscount] = useState<number>(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [isLoadingPromos, setIsLoadingPromos] = useState(false);
+
   const [formData, setFormData] = useState({
     customer_name: '',
     customer_phone: '',
-    customer_email: '',
+    order_type: 'dine_in' as 'dine_in' | 'take_away',
     table_number: '',
     payment_method: 'cash' as 'cash' | 'non_cash',
     notes: '',
   });
+
+  // Fetch active promos on mount
+  useEffect(() => {
+    const fetchActivePromos = async () => {
+      setIsLoadingPromos(true);
+      try {
+        const promos = await getActivePromos();
+        setActivePromos(promos);
+      } catch (err) {
+        console.error('Failed to fetch promos:', err);
+        // Silent fail - promos are optional
+      } finally {
+        setIsLoadingPromos(false);
+      }
+    };
+
+    fetchActivePromos();
+  }, []);
 
   const formatCurrency = (amount: number) => {
     return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -39,12 +66,46 @@ export default function Checkout() {
     return cart.reduce((total, item) => total + item.menu.price * item.quantity, 0);
   };
 
+  const getSubtotalAfterDiscount = (): number => {
+    const subtotal = getSubtotal();
+    return subtotal - promoDiscount;
+  };
+
   const getTax = (): number => {
-    return getSubtotal() * 0.10; // PPN 10%
+    // PPN 10% dihitung dari subtotal setelah discount
+    return getSubtotalAfterDiscount() * 0.10;
   };
 
   const getTotalPrice = (): number => {
-    return getSubtotal() + getTax();
+    return getSubtotalAfterDiscount() + getTax();
+  };
+
+  // Handle promo selection
+  const handleSelectPromo = async (promo: Promo) => {
+    setPromoError(null);
+    const subtotal = getSubtotal();
+
+    try {
+      const result = await validatePromo({
+        code: promo.code,
+        subtotal: subtotal,
+      });
+
+      setSelectedPromo(promo);
+      setPromoDiscount(result.discount);
+      setPromoError(null);
+    } catch (err: any) {
+      setPromoError(err.response?.data?.message || 'Promo tidak dapat digunakan');
+      setSelectedPromo(null);
+      setPromoDiscount(0);
+    }
+  };
+
+  // Handle remove promo
+  const handleRemovePromo = () => {
+    setSelectedPromo(null);
+    setPromoDiscount(0);
+    setPromoError(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -73,6 +134,11 @@ export default function Checkout() {
       return;
     }
 
+    if (formData.order_type === 'dine_in' && !formData.table_number) {
+      setError('Nomor meja wajib diisi untuk makan di tempat');
+      return;
+    }
+
     if (cart.length === 0) {
       setError('Keranjang kosong');
       return;
@@ -84,11 +150,12 @@ export default function Checkout() {
       const requestData: CreateTransactionRequest = {
         customer_name: formData.customer_name,
         customer_phone: formData.customer_phone,
-        customer_email: formData.customer_email || undefined,
+        order_type: formData.order_type,
         table_number: formData.table_number ? parseInt(formData.table_number) : undefined,
         // Kirim 'e_wallet' untuk non_cash payment ke backend (Midtrans akan handle detail payment method)
         payment_method: formData.payment_method === 'cash' ? 'cash' : 'e_wallet',
         notes: formData.notes || undefined,
+        promo_code: selectedPromo?.code || undefined,
         items: cart.map((item) => ({
           menu_id: item.menu.id,
           quantity: item.quantity,
@@ -226,6 +293,7 @@ export default function Checkout() {
             <div>
               <img src="/logo-dashboard.png" alt="POS Go" className="h-16 w-auto" />
             </div>
+            <DateTimeWidget />
           </div>
         </div>
       </header>
@@ -278,13 +346,13 @@ export default function Checkout() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Form Section */}
           <div className="lg:col-span-2">
-            <form onSubmit={handleSubmit}>
+            <form id="checkout-form" onSubmit={handleSubmit}>
               {/* Customer Information */}
               <Card className="mb-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Informasi Pelanggan</h2>
                 <div className="space-y-4">
                   <Input
-                    label="Nama Lengkap"
+                    label="Nama Lengkap*"
                     name="customer_name"
                     value={formData.customer_name}
                     onChange={handleInputChange}
@@ -292,7 +360,7 @@ export default function Checkout() {
                     required
                   />
                   <Input
-                    label="Nomor Telepon"
+                    label="Nomor Telepon*"
                     name="customer_phone"
                     type="tel"
                     value={formData.customer_phone}
@@ -300,21 +368,57 @@ export default function Checkout() {
                     placeholder="08xxxxxxxxxx"
                     required
                   />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tipe Pesanan <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            order_type: 'dine_in',
+                          }))
+                        }
+                        className={`p-4 rounded-xl border-2 transition-all text-left ${
+                          formData.order_type === 'dine_in'
+                            ? 'border-teal-500 bg-teal-50 shadow-md'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="font-bold text-gray-900">Makan di tempat</div>
+                        <div className="text-xs text-gray-600 mt-1">Pesanan untuk dine-in (pakai nomor meja)</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            order_type: 'take_away',
+                            table_number: '', // clear meja
+                          }))
+                        }
+                        className={`p-4 rounded-xl border-2 transition-all text-left ${
+                          formData.order_type === 'take_away'
+                            ? 'border-teal-500 bg-teal-50 shadow-md'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="font-bold text-gray-900">Take away</div>
+                        <div className="text-xs text-gray-600 mt-1">Pesanan dibawa pulang (tanpa nomor meja)</div>
+                      </button>
+                    </div>
+                  </div>
                   <Input
-                    label="Email (Opsional)"
-                    name="customer_email"
-                    type="email"
-                    value={formData.customer_email}
-                    onChange={handleInputChange}
-                    placeholder="email@example.com"
-                  />
-                  <Input
-                    label="Nomor Meja (Opsional)"
+                    label={formData.order_type === 'dine_in' ? 'Nomor Meja' : 'Nomor Meja (Opsional)'}
                     name="table_number"
                     type="number"
                     value={formData.table_number}
                     onChange={handleInputChange}
                     placeholder="Contoh: 5"
+                    required={formData.order_type === 'dine_in'}
                   />
                 </div>
               </Card>
@@ -366,6 +470,98 @@ export default function Checkout() {
                 </div>
               </Card>
 
+              {/* Promo Section */}
+              {(isLoadingPromos || activePromos.length > 0) && (
+                <Card className="mb-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Tag className="text-teal-600" size={20} />
+                    <h2 className="text-xl font-bold text-gray-900">Promo Tersedia</h2>
+                  </div>
+                  
+                  {promoError && (
+                    <div className="mb-4">
+                      <Alert type="error" message={promoError} />
+                    </div>
+                  )}
+
+                  {isLoadingPromos && activePromos.length === 0 && (
+                    <div className="py-6 text-center text-sm text-gray-500">
+                      Memuat promo...
+                    </div>
+                  )}
+
+                  {selectedPromo ? (
+                    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border-2 border-teal-400 rounded-lg p-4 mb-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Tag className="text-teal-600" size={18} />
+                            <span className="font-bold text-teal-900">{selectedPromo.code}</span>
+                            <span className="text-sm text-teal-700">- {selectedPromo.name}</span>
+                          </div>
+                          {selectedPromo.description && (
+                            <p className="text-sm text-teal-700 mb-2">{selectedPromo.description}</p>
+                          )}
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-teal-700">
+                              Diskon: {selectedPromo.type === 'percentage' 
+                                ? `${selectedPromo.value}%` 
+                                : `Rp ${formatCurrency(selectedPromo.value)}`}
+                            </span>
+                            {selectedPromo.min_purchase > 0 && (
+                              <span className="text-teal-600">
+                                Min. belanja: Rp {formatCurrency(selectedPromo.min_purchase)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-2 text-lg font-bold text-teal-900">
+                            Hemat: Rp {formatCurrency(promoDiscount)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRemovePromo}
+                          className="flex-shrink-0 text-teal-600 hover:text-teal-800 transition-colors"
+                          title="Hapus promo"
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {activePromos.map((promo) => (
+                        <button
+                          key={promo.id}
+                          type="button"
+                          onClick={() => handleSelectPromo(promo)}
+                          className="text-left p-4 border-2 border-gray-200 rounded-lg hover:border-teal-400 hover:bg-teal-50 transition-all"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <Tag className="text-teal-600" size={16} />
+                              <span className="font-bold text-gray-900">{promo.code}</span>
+                            </div>
+                            <span className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded">
+                              {promo.type === 'percentage' ? `${promo.value}%` : `Rp ${formatCurrency(promo.value)}`}
+                            </span>
+                          </div>
+                          <h3 className="font-semibold text-gray-900 mb-1">{promo.name}</h3>
+                          {promo.description && (
+                            <p className="text-xs text-gray-600 mb-2 line-clamp-2">{promo.description}</p>
+                          )}
+                          {promo.min_purchase > 0 && (
+                            <p className="text-xs text-gray-500">
+                              Min. belanja: Rp {formatCurrency(promo.min_purchase)}
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              )}
+
               {/* Notes */}
               <Card className="mb-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Catatan (Opsional)</h2>
@@ -393,10 +589,6 @@ export default function Checkout() {
                   </div>
                 </div>
               )}
-
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {getButtonText()}
-              </Button>
             </form>
           </div>
 
@@ -429,6 +621,15 @@ export default function Checkout() {
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-medium">Rp {formatCurrency(getSubtotal())}</span>
                 </div>
+                {selectedPromo && promoDiscount > 0 && (
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-600 flex items-center gap-1">
+                      <Tag size={14} className="text-teal-600" />
+                      Diskon ({selectedPromo.code})
+                    </span>
+                    <span className="font-medium text-teal-600">- Rp {formatCurrency(promoDiscount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center mb-4">
                   <span className="text-gray-600">PPN 10%</span>
                   <span className="font-medium">Rp {formatCurrency(getTax())}</span>
@@ -437,6 +638,18 @@ export default function Checkout() {
                   <span>Total Pembayaran</span>
                   <span className="text-teal-600">Rp {formatCurrency(getTotalPrice())}</span>
                 </div>
+              </div>
+
+              {/* Submit Button moved here */}
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <Button
+                  type="submit"
+                  form="checkout-form"
+                  className="w-full"
+                  disabled={isSubmitting}
+                >
+                  {getButtonText()}
+                </Button>
               </div>
             </Card>
           </div>
