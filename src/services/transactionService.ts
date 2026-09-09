@@ -70,9 +70,9 @@ export const confirmCashPaid = async (id: string): Promise<TransactionResponse> 
 
 export const updateOrderStatus = async (
   id: string,
-  order_status: 'pending' | 'cooking' | 'ready' | 'completed' | 'cancelled'
+  order_status: 'pending' | 'processing' | 'completed' | 'cancelled'
 ): Promise<TransactionResponse> => {
-  const response = await api.patch(`/transaction/${id}/order-status`, { order_status });
+  const response = await api.patch(`/transaction/${id}/status`, { order_status });
   return response.data.data;
 };
 

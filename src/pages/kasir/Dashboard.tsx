@@ -65,8 +65,7 @@ export default function KasirDashboard() {
 
   const statusBadge = (t: TransactionResponse) => {
     if (t.order_status === 'completed') return { label: 'Selesai', cls: 'bg-green-100 text-green-800' };
-    if (t.order_status === 'ready') return { label: 'Siap disajikan', cls: 'bg-emerald-100 text-emerald-800' };
-    if (t.order_status === 'cooking') return { label: 'Sedang dimasak', cls: 'bg-amber-100 text-amber-800' };
+    if (t.order_status === 'processing') return { label: 'Sedang dimasak', cls: 'bg-amber-100 text-amber-800' };
     if (t.order_status === 'cancelled') return { label: 'Dibatalkan', cls: 'bg-red-100 text-red-800' };
     return { label: 'Baru', cls: 'bg-teal-100 text-teal-800' };
   };
@@ -76,8 +75,8 @@ export default function KasirDashboard() {
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     if (activeTab === 'cancelled') return list.filter((t) => t.order_status === 'cancelled');
-    // Tab "Baru" menampilkan pesanan yang masih aktif: pending & ready
-    return list.filter((t) => t.order_status === 'pending' || t.order_status === 'ready');
+    // Tab "Baru" menampilkan pesanan yang masih aktif: pending & processing
+    return list.filter((t) => t.order_status === 'pending' || t.order_status === 'processing');
   }, [transactions, activeTab]);
 
   const selected = useMemo(() => {
@@ -100,7 +99,7 @@ export default function KasirDashboard() {
         setSelectedId((prev) => {
           const currentFiltered = activeTab === 'cancelled' 
             ? sorted.filter((t) => t.order_status === 'cancelled')
-            : sorted.filter((t) => t.order_status === 'pending' || t.order_status === 'ready');
+            : sorted.filter((t) => t.order_status === 'pending' || t.order_status === 'processing');
 
           // Jika tidak ada pesanan di tab ini, jangan pilih apa-apa
           if (currentFiltered.length === 0) return null;
@@ -206,7 +205,7 @@ export default function KasirDashboard() {
     try {
       setError(null);
       setSuccess(null);
-      await updateOrderStatus(selected.id, 'cooking');
+      await updateOrderStatus(selected.id, 'processing');
       setSuccess('Pesanan dikirim ke dapur (status: sedang dimasak)');
       const data = await getAllTransactions();
       const sorted = [...data].sort(
@@ -557,7 +556,7 @@ export default function KasirDashboard() {
                           Kirim ke Dapur 
                         </Button>
                       )}
-                      {selected.order_status === 'ready' && selected.payment_status === 'paid' && (
+                      {selected.order_status === 'processing' && selected.payment_status === 'paid' && (
                         <Button
                           className="w-full"
                           variant="primary"
@@ -566,7 +565,7 @@ export default function KasirDashboard() {
                           Tandai Selesai
                         </Button>
                       )}
-                      {(selected.order_status === 'pending' || selected.order_status === 'cooking' || selected.order_status === 'ready') && (
+                      {(selected.order_status === 'pending' || selected.order_status === 'processing') && (
                         <Button
                           className="w-full mt-2"
                           variant="danger"
@@ -576,9 +575,9 @@ export default function KasirDashboard() {
                         </Button>
                       )}
                       {!(selected.order_status === 'pending' && selected.payment_status === 'paid') &&
-                        !(selected.order_status === 'ready' && selected.payment_status === 'paid') &&
+                        !(selected.order_status === 'processing' && selected.payment_status === 'paid') &&
                         selected.order_status !== 'pending' &&
-                        selected.order_status !== 'ready' && (
+                        selected.order_status !== 'processing' && (
                           <p className="text-xs text-gray-500">
                             Tidak ada aksi status yang tersedia untuk pesanan ini.
                           </p>

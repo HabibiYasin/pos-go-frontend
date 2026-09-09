@@ -35,18 +35,17 @@ export default function KokiDashboard() {
 
   const cookingStatusBadge = (t: TransactionResponse) => {
     if (t.order_status === 'completed') return { label: 'Selesai', cls: 'bg-green-100 text-green-800' };
-    if (t.order_status === 'ready') return { label: 'Siap disajikan', cls: 'bg-emerald-100 text-emerald-800' };
-    if (t.order_status === 'cooking') return { label: 'Sedang dimasak', cls: 'bg-amber-100 text-amber-800' };
+    if (t.order_status === 'processing') return { label: 'Sedang dimasak', cls: 'bg-amber-100 text-amber-800' };
     if (t.order_status === 'cancelled') return { label: 'Dibatalkan', cls: 'bg-red-100 text-red-800' };
     return { label: 'Baru', cls: 'bg-teal-100 text-teal-800' };
   };
 
   const filtered = useMemo(() => {
-    // Koki hanya lihat pesanan yang sedang dimasak (status cooking)
+    // Koki hanya lihat pesanan yang sedang diproses.
     const list = [...transactions].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-    return list.filter((t) => t.order_status === 'cooking');
+    return list.filter((t) => t.order_status === 'processing');
   }, [transactions]);
 
   const selected = useMemo(() => {
@@ -64,9 +63,9 @@ export default function KokiDashboard() {
         );
         setTransactions(sorted);
         setIsLoading(false);
-        // pilih otomatis pesanan "cooking" terbaru kalau belum ada pilihan
+        // pilih otomatis pesanan yang sedang diproses kalau belum ada pilihan
         setSelectedId((prev) => {
-          const cookingList = sorted.filter((t) => t.order_status === 'cooking');
+          const cookingList = sorted.filter((t) => t.order_status === 'processing');
           if (cookingList.length === 0) return null;
           if (!prev) return cookingList[0].id;
           if (prev && !cookingList.some((t) => t.id === prev)) return cookingList[0].id;
@@ -291,7 +290,7 @@ export default function KokiDashboard() {
                     <p className="mt-2 text-xs text-gray-500">
                       Status ini menentukan apakah pesanan masih menunggu, sedang dimasak, atau siap disajikan.
                     </p>
-                    {selected.order_status === 'cooking' && (
+                    {selected.order_status === 'processing' && (
                       <div className="mt-3">
                         <button
                           type="button"
@@ -299,8 +298,8 @@ export default function KokiDashboard() {
                             try {
                               setError(null);
                               setSuccess(null);
-                              await updateOrderStatus(selected.id, 'ready');
-                              setSuccess('Pesanan ditandai siap disajikan');
+                              await updateOrderStatus(selected.id, 'completed');
+                              setSuccess('Pesanan ditandai selesai');
                               const data = await getAllTransactions();
                               const sorted = [...data].sort(
                                 (a, b) =>
@@ -311,13 +310,13 @@ export default function KokiDashboard() {
                             } catch (e: any) {
                               setError(
                                 e?.response?.data?.message ||
-                                  'Gagal mengubah status pesanan menjadi ready'
+                                  'Gagal menyelesaikan pesanan'
                               );
                             }
                           }}
                           className="w-full px-4 py-2 text-sm font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors"
                         >
-                          Tandai Siap Disajikan
+                          Tandai Selesai
                         </button>
                       </div>
                     )}
