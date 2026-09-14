@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { getTabToken } from './tabSession';
 
 const API_URL = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_API_URL || 'http://localhost:8080');
 
@@ -11,7 +12,14 @@ const api = axios.create({
   },
 });
 
-// Saat 401/403: clear session. Redirect ke login HANYA jika user ada di route yang butuh auth (bukan halaman publik).
+// Always specify tab authentication, including an empty Bearer when logged out.
+// This prevents a legacy shared cookie from selecting another tab's account.
+api.interceptors.request.use((config) => {
+  config.headers.set('Authorization', `Bearer ${getTabToken() ?? ''}`);
+  return config;
+});
+
+// Only an expired/invalid session (401) logs out this tab; 403 is a permission error.
 const isPublicPath = (path: string) => {
   if (path === '/login') return true;
   if (path === '/menu' || path.startsWith('/menu')) return true;
@@ -24,7 +32,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     const status = err?.response?.status;
-    if (status === 401 || status === 403) {
+    if (status === 401 && err.config?.url !== '/auth/login') {
       useAuthStore.getState().logout();
       const path = window.location.pathname;
       // Redirect hanya jika di halaman yang seharusnya butuh login (admin/kasir/koki/change-password)

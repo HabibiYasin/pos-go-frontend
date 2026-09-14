@@ -1,9 +1,16 @@
 import api from './api';
+import { getTabToken, setTabToken } from './tabSession';
 import type { LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, GetCurrentUserResponse, GetUsersResponse } from '../types';
 
 export const authService = {
   login: async (data: LoginRequest): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/auth/login', data);
+    if (response.data.success) {
+      if (!response.data.data.token) {
+        throw new Error('Server belum mendukung sesi per tab. Silakan coba lagi setelah deployment selesai.');
+      }
+      setTabToken(response.data.data.token);
+    }
     return response.data;
   },
 
@@ -18,6 +25,7 @@ export const authService = {
   },
 
   getCurrentUser: async (): Promise<GetCurrentUserResponse> => {
+    if (!getTabToken()) throw new Error('Tab ini belum login');
     const response = await api.get<GetCurrentUserResponse>('/auth/me');
     return response.data;
   },
