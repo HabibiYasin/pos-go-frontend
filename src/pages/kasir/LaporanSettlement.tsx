@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { isAxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import Card from '../../components/UI/Card';
@@ -10,6 +11,8 @@ import {
   getReportByDate,
   getSettlement,
   createSettlement,
+  updateSettlement,
+  resetSettlement,
   type ReportResponse,
   type GetSettlementResponse,
 } from '../../services/reportService';
@@ -48,17 +51,19 @@ export default function LaporanSettlement() {
       } else {
         setActualCash('');
       }
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Gagal memuat laporan');
+      return true;
+    } catch (e) {
+      setError(isAxiosError(e) ? e.response?.data?.message || 'Gagal memuat laporan' : 'Gagal memuat laporan');
       setReport(null);
       setSettlementData(null);
+      return false;
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData(date);
+    fetchData(todayStr());
   }, []);
 
   const handleTampilkan = () => {
@@ -66,24 +71,39 @@ export default function LaporanSettlement() {
   };
 
   const handleSimpanSettlement = async () => {
-    const actual = parseFloat(actualCash.replace(/\./g, '').replace(',', '.'));
-    if (Number.isNaN(actual) || actual < 0) {
+    if (isSaving || isLoading || !settlementData) return;
+    const actual = Number(actualCash);
+    if (!actualCash.trim() || !Number.isFinite(actual) || actual < 0 || actual > 9999999999999.99) {
       setError('Masukkan jumlah uang tunai yang valid');
-      return;
-    }
-    if (settlementData?.settlement) {
-      setError('Settlement untuk tanggal ini sudah tersimpan');
       return;
     }
     setIsSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      await createSettlement(date, actual);
-      setSuccess('Settlement berhasil disimpan');
-      fetchData(date);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Gagal menyimpan settlement');
+      const updating = !!settlementData.settlement;
+      await (updating ? updateSettlement : createSettlement)(date, actual);
+      if (await fetchData(date)) {
+        setSuccess(updating ? 'Settlement berhasil diperbarui' : 'Settlement berhasil disimpan');
+      }
+    } catch (e) {
+      setError(isAxiosError(e) ? e.response?.data?.message || 'Gagal menyimpan settlement' : 'Gagal menyimpan settlement');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleResetSettlement = async () => {
+    if (isSaving || isLoading || !settlementData?.debug_reset_enabled) return;
+    if (!window.confirm(`Reset settlement Anda untuk ${date}? Data transaksi tetap tersimpan.`)) return;
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await resetSettlement(date);
+      if (await fetchData(date)) setSuccess('Settlement direset. Anda dapat menyimpan ulang untuk pengujian.');
+    } catch (e) {
+      setError(isAxiosError(e) ? e.response?.data?.message || 'Gagal mereset settlement' : 'Gagal mereset settlement');
     } finally {
       setIsSaving(false);
     }
@@ -100,7 +120,7 @@ export default function LaporanSettlement() {
     new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const expectedCash = settlementData?.expected_cash ?? 0;
-  const actualNum = actualCash ? parseFloat(actualCash.replace(/\./g, '').replace(',', '.')) : 0;
+  const actualNum = Number(actualCash);
   const discrepancy = Number.isNaN(actualNum) ? 0 : actualNum - expectedCash;
   const hasSettlement = !!settlementData?.settlement;
 
@@ -172,11 +192,20 @@ export default function LaporanSettlement() {
               <input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                aria-label="Tanggal laporan"
+                disabled={isLoading || isSaving}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  setReport(null);
+                  setSettlementData(null);
+                  setActualCash('');
+                  setSuccess(null);
+                  setError(null);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
             </div>
-            <Button onClick={handleTampilkan} disabled={isLoading}>
+            <Button onClick={handleTampilkan} disabled={isLoading || isSaving || !date}>
               {isLoading ? 'Memuat...' : 'Tampilkan'}
             </Button>
             <Button variant="secondary" onClick={handlePrint} disabled={!report || isLoading}>
@@ -306,16 +335,21 @@ export default function LaporanSettlement() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="actual-cash" className="block text-sm font-medium text-gray-700 mb-1">
                       Uang tunai yang diserahkan kasir
                     </label>
                     <input
-                      type="text"
-                      inputMode="numeric"
+                      id="actual-cash"
+                      data-testid="settlement-actual-cash"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max="9999999999999.99"
+                      step="0.01"
                       placeholder="0"
                       value={actualCash}
                       onChange={(e) => setActualCash(e.target.value)}
-                      disabled={hasSettlement}
+                      disabled={isSaving || isLoading}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                     />
                   </div>
@@ -333,16 +367,24 @@ export default function LaporanSettlement() {
                       {discrepancy >= 0 ? '+' : ''}Rp {formatCurrency(discrepancy)}
                     </div>
                   </div>
-                  {hasSettlement ? (
-                    <p className="text-sm text-teal-600 font-medium">Settlement untuk tanggal ini sudah tersimpan.</p>
-                  ) : (
+                  {hasSettlement && (
+                    <p className="text-sm text-teal-600 font-medium">Settlement sudah tersimpan. Untuk koreksi atau tambahan setoran, masukkan total uang tunai terbaru lalu simpan perubahan.</p>
+                  )}
                     <Button
+                      data-testid="settlement-save"
                       onClick={handleSimpanSettlement}
-                      disabled={isSaving}
-                      className="w-full"
+                      disabled={isSaving || isLoading || !settlementData}
+                      className="w-full print:hidden"
                     >
-                      {isSaving ? 'Menyimpan...' : 'Simpan Settlement / Tutup Kasir'}
+                      {isSaving ? 'Memproses...' : hasSettlement ? 'Simpan Perubahan Settlement' : 'Simpan Settlement / Tutup Kasir'}
                     </Button>
+                  {settlementData?.debug_reset_enabled && (
+                    <div className="pt-3 border-t border-gray-200 print:hidden">
+                      <p className="text-xs text-gray-500 mb-2">Debugging: reset settlement kasir ini untuk tanggal {date}. Data transaksi tidak dihapus.</p>
+                      <Button variant="danger" data-testid="settlement-reset" onClick={handleResetSettlement} disabled={isSaving || isLoading || !hasSettlement} className="w-full">
+                        Reset Settlement (Debug)
+                      </Button>
+                    </div>
                   )}
                 </div>
               </Card>

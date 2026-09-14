@@ -37,6 +37,7 @@ export interface SettlementResponse {
 }
 
 export interface GetSettlementResponse {
+  debug_reset_enabled?: boolean;
   expected_cash: number;
   settlement: SettlementResponse | null;
 }
@@ -60,6 +61,15 @@ export const createSettlement = async (
 };
 
 // Grafik dashboard admin
+export const updateSettlement = async (date: string, actual_cash: number): Promise<SettlementResponse> => {
+  const response = await api.put('/settlement', { date, actual_cash });
+  return response.data.data;
+};
+
+export const resetSettlement = async (date: string): Promise<void> => {
+  await api.delete('/settlement/debug-reset', { params: { date } });
+};
+
 export interface ChartDailyItem {
   date: string;
   total_transactions: number;
