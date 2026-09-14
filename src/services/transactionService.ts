@@ -70,14 +70,14 @@ export const confirmCashPaid = async (id: string): Promise<TransactionResponse> 
 
 export const updateOrderStatus = async (
   id: string,
-  order_status: 'pending' | 'processing' | 'completed' | 'cancelled'
+  order_status: 'pending' | 'cooking' | 'ready' | 'completed' | 'cancelled'
 ): Promise<TransactionResponse> => {
-  const response = await api.patch(`/transaction/${id}/status`, { order_status });
+  const response = await api.patch(`/transaction/${id}/order-status`, { order_status });
   return response.data.data;
 };
 
-/** Batalkan pesanan melalui endpoint status yang tersedia di backend. */
+/** Batalkan pesanan (hanya kasir). Dapat dibatalkan jika status: pending, cooking, atau ready. */
 export const cancelOrder = async (id: string): Promise<TransactionResponse> => {
-  const response = await api.patch(`/transaction/${id}/status`, { order_status: 'cancelled' });
+  const response = await api.patch(`/transaction/${id}/cancel`);
   return response.data.data;
 };
