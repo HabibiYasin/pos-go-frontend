@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { isAxiosError } from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createTransaction, type CreateTransactionRequest } from '../../services/transactionService';
 import { getActivePromos, validatePromo, type Promo } from '../../services/promoService';
@@ -30,6 +31,8 @@ export default function Checkout() {
   const [promoDiscount, setPromoDiscount] = useState<number>(0);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [isLoadingPromos, setIsLoadingPromos] = useState(false);
+  const [voucherCode, setVoucherCode] = useState('');
+  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
 
   const [formData, setFormData] = useState({
     customer_name: '',
@@ -80,37 +83,38 @@ export default function Checkout() {
     return getSubtotalAfterDiscount() + getTax();
   };
 
-  // Handle promo selection
-  const handleSelectPromo = async (promo: Promo) => {
+  // Both voucher entry and promo cards use server validation.
+  const handleApplyVoucher = async (code: string) => {
+    if (isValidatingPromo || isSubmitting) return;
+    const normalizedCode = code.trim();
+    setVoucherCode(normalizedCode);
     setPromoError(null);
-    const subtotal = getSubtotal();
+    setSelectedPromo(null);
+    setPromoDiscount(0);
 
-    if (subtotal < promo.min_purchase) {
-      const shortfall = promo.min_purchase - subtotal;
-      setPromoError(`Promo tidak terpenuhi (tambahkan Rp${formatCurrency(shortfall)})`);
-      setSelectedPromo(null);
-      setPromoDiscount(0);
+    if (!normalizedCode) {
+      setPromoError('Kode voucher wajib diisi');
       return;
     }
 
+    setIsValidatingPromo(true);
     try {
-      const result = await validatePromo({
-        code: promo.code,
-        subtotal: subtotal,
-      });
-
-      setSelectedPromo(promo);
+      const result = await validatePromo({ code: normalizedCode, subtotal: getSubtotal() });
+      setSelectedPromo(result.promo);
+      setVoucherCode(result.promo.code);
       setPromoDiscount(result.discount);
-      setPromoError(null);
-    } catch (err: any) {
-      setPromoError(err.response?.data?.message || 'Promo tidak dapat digunakan');
-      setSelectedPromo(null);
-      setPromoDiscount(0);
+    } catch (err) {
+      setPromoError(isAxiosError(err)
+        ? err.response?.data?.message || 'Gagal memvalidasi voucher. Silakan coba lagi'
+        : 'Gagal memvalidasi voucher. Silakan coba lagi');
+    } finally {
+      setIsValidatingPromo(false);
     }
   };
 
   // Handle remove promo
   const handleRemovePromo = () => {
+    setVoucherCode('');
     setSelectedPromo(null);
     setPromoDiscount(0);
     setPromoError(null);
@@ -128,6 +132,7 @@ export default function Checkout() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isValidatingPromo) return;
     setError(null);
     setSuccess(null);
 
@@ -478,19 +483,55 @@ export default function Checkout() {
                 </div>
               </Card>
 
+              <Card className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Masukan Kode Voucher</h2>
+                <label htmlFor="voucher-code" className="block text-sm font-medium text-gray-700 mb-2">Kode Promo</label>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    id="voucher-code"
+                    name="voucher_code"
+                    data-testid="voucher-code"
+                    value={voucherCode}
+                    disabled={isValidatingPromo || isSubmitting}
+                    onChange={(event) => {
+                      setVoucherCode(event.target.value);
+                      setPromoError(null);
+                      setSelectedPromo(null);
+                      setPromoDiscount(0);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void handleApplyVoucher(voucherCode);
+                      }
+                    }}
+                    aria-invalid={!!promoError}
+                    aria-describedby={promoError ? 'voucher-error' : undefined}
+                    placeholder="Masukkan kode promo"
+                    className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <Button type="button" data-testid="apply-voucher" isLoading={isValidatingPromo} disabled={isSubmitting} onClick={() => handleApplyVoucher(voucherCode)}>
+                    Pasang Voucher
+                  </Button>
+                </div>
+                {promoError && (
+                  <div id="voucher-error" data-testid="voucher-error" role="alert" className="mt-4">
+                    <Alert type="error" message={promoError} />
+                  </div>
+                )}
+                {selectedPromo && (
+                  <p role="status" data-testid="voucher-success" className="mt-4 text-teal-700">Voucher berhasil dipasang</p>
+                )}
+              </Card>
+
               {/* Promo Section */}
-              {(isLoadingPromos || activePromos.length > 0) && (
+              {(isLoadingPromos || activePromos.length > 0 || selectedPromo) && (
                 <Card className="mb-6">
                   <div className="flex items-center gap-2 mb-4">
                     <Tag className="text-teal-600" size={20} />
                     <h2 className="text-xl font-bold text-gray-900">Promo Tersedia</h2>
                   </div>
                   
-                  {promoError && (
-                    <div className="mb-4">
-                      <Alert type="error" message={promoError} />
-                    </div>
-                  )}
 
                   {isLoadingPromos && activePromos.length === 0 && (
                     <div className="py-6 text-center text-sm text-gray-500">
@@ -529,6 +570,7 @@ export default function Checkout() {
                         <button
                           type="button"
                           onClick={handleRemovePromo}
+                          disabled={isValidatingPromo || isSubmitting}
                           className="flex-shrink-0 text-teal-600 hover:text-teal-800 transition-colors"
                           title="Hapus promo"
                         >
@@ -542,7 +584,8 @@ export default function Checkout() {
                         <button
                           key={promo.id}
                           type="button"
-                          onClick={() => handleSelectPromo(promo)}
+                          onClick={() => handleApplyVoucher(promo.code)}
+                          disabled={isValidatingPromo || isSubmitting}
                           className="text-left p-4 border-2 border-gray-200 rounded-lg hover:border-teal-400 hover:bg-teal-50 transition-all"
                         >
                           <div className="flex items-start justify-between gap-2 mb-2">
