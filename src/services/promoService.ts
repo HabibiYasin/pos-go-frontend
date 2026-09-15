@@ -1,6 +1,7 @@
 import api from './api';
 
 export interface Promo {
+  valid_days: number;
   id: string;
   code: string;
   name: string;
@@ -19,6 +20,7 @@ export interface Promo {
 }
 
 export interface CreatePromoRequest {
+  valid_days?: number;
   code: string;
   name: string;
   description?: string;
@@ -33,6 +35,7 @@ export interface CreatePromoRequest {
 }
 
 export interface ValidatePromoRequest {
+  debug_date?: string;
   code: string;
   subtotal: number;
 }
@@ -73,8 +76,8 @@ export const deletePromo = async (id: string): Promise<void> => {
 };
 
 // Get active promos (Public)
-export const getActivePromos = async (): Promise<Promo[]> => {
-  const response = await api.get('/promo/active');
+export const getActivePromos = async (debugDate?: string): Promise<Promo[]> => {
+  const response = await api.get('/promo/active', { params: { debug_date: debugDate || undefined } });
   return response.data.data;
 };
 

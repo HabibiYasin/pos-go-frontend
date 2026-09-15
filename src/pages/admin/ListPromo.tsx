@@ -469,6 +469,7 @@ export default function ListPromo() {
       >
         <PromoForm
           initialData={editingPromo ? {
+            valid_days: editingPromo.valid_days,
             code: editingPromo.code,
             name: editingPromo.name,
             description: editingPromo.description,

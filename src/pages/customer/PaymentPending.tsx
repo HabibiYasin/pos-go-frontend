@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getTransactionById, type TransactionResponse } from '../../services/transactionService';
+import { getCustomerOrder, getOrderSnapToken, type TransactionResponse } from '../../services/transactionService';
+import { prepareMidtrans } from '../../services/midtransService';
 import { Loader2, Clock, ArrowLeft } from 'lucide-react';
 import Card from '../../components/UI/Card';
 
@@ -34,13 +35,12 @@ export default function PaymentPending() {
 
   useEffect(() => {
     let isMounted = true;
-    let pollInterval: ReturnType<typeof setInterval>;
 
     const checkPaymentStatus = async () => {
       if (!id) return;
 
       try {
-        const data = await getTransactionById(id);
+        const data = await getCustomerOrder(id);
         
         if (!isMounted) return;
 
@@ -61,19 +61,17 @@ export default function PaymentPending() {
             : 'Pembayaran dibatalkan';
           setError(message);
         }
-      } catch (error: any) {
+      } catch (error) {
         if (!isMounted) return;
         console.error('Error checking payment:', error);
-        setError('Gagal mengecek status pembayaran');
+        setError(error instanceof Error ? error.message : 'Gagal mengecek status pembayaran');
         setIsLoading(false);
       }
     };
 
-    // Initial check
-    checkPaymentStatus();
-
     // Polling setiap 3 detik
-    pollInterval = setInterval(checkPaymentStatus, 3000);
+    const pollInterval = setInterval(checkPaymentStatus, 3000);
+    checkPaymentStatus();
 
     // Cleanup
     return () => {
@@ -98,6 +96,15 @@ export default function PaymentPending() {
 
     return () => clearInterval(timerInterval);
   }, [transaction]);
+
+  const resumePayment = async () => {
+    try {
+      const token = id && getOrderSnapToken(id);
+      if (!token) throw new Error('Sesi pembayaran tidak ditemukan di tab ini.');
+      await prepareMidtrans();
+      window.snap.pay(token, { onSuccess: () => setError(null), onError: () => setError('Pembayaran belum berhasil. Silakan coba lagi.') });
+    } catch (err) { setError(err instanceof Error ? err.message : 'Gagal membuka pembayaran'); }
+  };
 
   if (isLoading) {
     return (
@@ -168,6 +175,11 @@ export default function PaymentPending() {
           <p className="text-gray-600 mb-8">
             Silakan selesaikan pembayaran Anda. Halaman ini akan otomatis update saat pembayaran berhasil.
           </p>
+          {transaction?.payment_status === 'pending' && (
+            <button onClick={resumePayment} className="mb-6 px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700">
+              Lanjutkan Pembayaran
+            </button>
+          )}
 
           {transaction && (
             <>
@@ -252,7 +264,7 @@ export default function PaymentPending() {
               <div className="bg-gray-50 rounded-lg p-6 mb-6 text-left">
                 <h2 className="font-bold text-gray-900 mb-4 text-lg">Item Pesanan</h2>
                 <div className="space-y-3">
-                  {transaction.items.map((item: any, index: number) => (
+                  {transaction.items.map((item, index: number) => (
                     <div key={index} className="flex justify-between items-center">
                       <div>
                         <p className="font-medium text-gray-900">{item.menu_name}</p>

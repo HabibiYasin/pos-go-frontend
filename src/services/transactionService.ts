@@ -24,6 +24,7 @@ export interface CreateTransactionRequest {
 }
 
 export interface TransactionResponse {
+	order_access_token?: string;
   id: string;
   customer_name: string;
   customer_phone: string;
@@ -50,12 +51,29 @@ export const createTransaction = async (
   data: CreateTransactionRequest
 ): Promise<TransactionResponse> => {
   const response = await api.post('/transaction', data);
+  if (response.data.data.order_access_token) {
+    sessionStorage.setItem(`pos-go.order.${response.data.data.id}`, JSON.stringify({
+      token: response.data.data.order_access_token,
+      snap_token: response.data.data.snap_token,
+    }));
+  }
   return response.data.data;
 };
 
 export const getTransactionById = async (id: string): Promise<TransactionResponse> => {
   const response = await api.get(`/transaction/${id}`);
   return response.data.data;
+};
+
+export const getCustomerOrder = async (id: string): Promise<TransactionResponse> => {
+  const access = JSON.parse(sessionStorage.getItem(`pos-go.order.${id}`) || 'null');
+  if (!access?.token) throw new Error('Buka pesanan dari tab tempat Anda melakukan checkout.');
+  const response = await api.get(`/transaction/${id}/customer`, { headers: { 'X-Order-Token': access.token } });
+  return response.data.data;
+};
+
+export const getOrderSnapToken = (id: string): string | undefined => {
+  return JSON.parse(sessionStorage.getItem(`pos-go.order.${id}`) || 'null')?.snap_token;
 };
 
 export const getAllTransactions = async (): Promise<TransactionResponse[]> => {

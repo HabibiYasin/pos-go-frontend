@@ -131,7 +131,7 @@ export default function CustomerMenu() {
               />
             </div>
             <div className="flex items-center gap-4">
-              <DateTimeWidget />
+              <DateTimeWidget debug resetDebugOnMount />
               <button
                 onClick={() => setShowCart(true)}
               className="relative flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"

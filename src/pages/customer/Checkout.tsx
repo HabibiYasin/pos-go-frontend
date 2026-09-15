@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useDebugDateStore } from '../../store/debugDateStore';
 import { isAxiosError } from 'axios';
+import { prepareMidtrans } from '../../services/midtransService';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createTransaction, type CreateTransactionRequest } from '../../services/transactionService';
 import { getActivePromos, validatePromo, type Promo } from '../../services/promoService';
@@ -17,6 +19,8 @@ interface CartItem {
 }
 
 export default function Checkout() {
+  const debugDate = useDebugDateStore((state) => state.date);
+  const validationVersion = useRef(0);
   const navigate = useNavigate();
   const location = useLocation();
   const cart: CartItem[] = location.state?.cart || [];
@@ -45,21 +49,28 @@ export default function Checkout() {
 
   // Fetch active promos on mount
   useEffect(() => {
+    let cancelled = false;
+    validationVersion.current += 1;
+    setSelectedPromo(null);
+    setPromoDiscount(0);
+    setPromoError(null);
+    setIsValidatingPromo(false);
     const fetchActivePromos = async () => {
       setIsLoadingPromos(true);
       try {
-        const promos = await getActivePromos();
-        setActivePromos(promos);
+        const promos = await getActivePromos(debugDate);
+        if (!cancelled) setActivePromos(promos);
       } catch (err) {
         console.error('Failed to fetch promos:', err);
         // Silent fail - promos are optional
       } finally {
-        setIsLoadingPromos(false);
+        if (!cancelled) setIsLoadingPromos(false);
       }
     };
 
     fetchActivePromos();
-  }, []);
+    return () => { cancelled = true; };
+  }, [debugDate]);
 
   const formatCurrency = (amount: number) => {
     return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -98,17 +109,20 @@ export default function Checkout() {
     }
 
     setIsValidatingPromo(true);
+    const version = ++validationVersion.current;
     try {
-      const result = await validatePromo({ code: normalizedCode, subtotal: getSubtotal() });
+      const result = await validatePromo({ code: normalizedCode, subtotal: getSubtotal(), debug_date: debugDate || undefined });
+      if (version !== validationVersion.current) return;
       setSelectedPromo(result.promo);
       setVoucherCode(result.promo.code);
       setPromoDiscount(result.discount);
     } catch (err) {
+      if (version !== validationVersion.current) return;
       setPromoError(isAxiosError(err)
         ? err.response?.data?.message || 'Gagal memvalidasi voucher. Silakan coba lagi'
         : 'Gagal memvalidasi voucher. Silakan coba lagi');
     } finally {
-      setIsValidatingPromo(false);
+      if (version === validationVersion.current) setIsValidatingPromo(false);
     }
   };
 
@@ -160,6 +174,7 @@ export default function Checkout() {
     setIsSubmitting(true);
 
     try {
+      if (formData.payment_method !== 'cash') await prepareMidtrans();
       const requestData: CreateTransactionRequest = {
         customer_name: formData.customer_name,
         customer_phone: formData.customer_phone,
@@ -201,35 +216,22 @@ export default function Checkout() {
           }
 
           window.snap.pay(response.snap_token, {
-            onSuccess: (result) => {
-              console.log('Payment success:', result);
+            onSuccess: () => {
               // Tutup modal Midtrans terlebih dahulu
               if (typeof window.snap !== 'undefined' && window.snap.hide) {
                 window.snap.hide();
               }
               
-              // Tampilkan success message
-              setSuccess('Pembayaran berhasil! Pesanan Anda sedang diproses. Anda akan diarahkan ke menu...');
               setIsSubmitting(false);
-              
-              // Scroll ke atas agar user lihat success message
-              setTimeout(() => {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }, 100);
-              
-              // Redirect ke menu setelah 5 detik
-              setTimeout(() => {
-                navigate('/menu');
-              }, 5000);
-            },
-            onPending: (result) => {
-              console.log('Payment pending:', result);
+              // Wait for the server's verified payment notification.
               navigate(`/payment-pending/${response.id}`);
             },
-            onError: (result) => {
-              console.error('Payment error:', result);
-              setError('Pembayaran gagal. Silakan coba lagi.');
+            onPending: () => {
+              navigate(`/payment-pending/${response.id}`);
+            },
+            onError: () => {
               setIsSubmitting(false);
+              navigate(`/payment-pending/${response.id}`);
             },
             onClose: () => {
               console.log('Popup closed by user');
@@ -238,7 +240,7 @@ export default function Checkout() {
                 ? ` Anda dapat melanjutkan pembayaran hingga ${new Date(response.expired_at).toLocaleString('id-ID')}.`
                 : ' Anda dapat melanjutkan pembayaran dalam 24 jam.';
               
-              alert('Pembayaran belum selesai. Link pembayaran telah dikirim ke email/SMS Anda.' + expiredInfo);
+              alert('Pembayaran belum selesai. Anda bisa melanjutkannya dari halaman status pesanan.' + expiredInfo);
               // User close popup, arahkan ke pending page
               navigate(`/payment-pending/${response.id}`);
             }
@@ -248,8 +250,8 @@ export default function Checkout() {
           setIsSubmitting(false);
         }
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Gagal membuat pesanan');
+    } catch (err) {
+      setError(isAxiosError(err) ? err.response?.data?.message || 'Gagal membuat pesanan' : err instanceof Error ? err.message : 'Gagal membuat pesanan');
       setIsSubmitting(false);
     }
   };
@@ -306,7 +308,7 @@ export default function Checkout() {
             <div>
               <img src="/logo-dashboard.png" alt="POS Go" className="h-16 w-auto" />
             </div>
-            <DateTimeWidget />
+            <DateTimeWidget debug />
           </div>
         </div>
       </header>

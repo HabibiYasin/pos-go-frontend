@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Card from '../../components/UI/Card';
 import Button from '../../components/UI/Button';
 import { CheckCircle2, Home } from 'lucide-react';
-import { getTransactionById, type TransactionResponse } from '../../services/transactionService';
+import { getCustomerOrder, type TransactionResponse } from '../../services/transactionService';
 
 export default function OrderSuccess() {
   const navigate = useNavigate();
@@ -20,7 +20,8 @@ export default function OrderSuccess() {
       }
 
       try {
-        const data = await getTransactionById(id);
+        const data = await getCustomerOrder(id);
+        if (data.payment_status !== 'paid') { navigate(`/payment-pending/${id}`, { replace: true }); return; }
         setTransaction(data);
       } catch (err) {
         console.error('Error fetching transaction:', err);

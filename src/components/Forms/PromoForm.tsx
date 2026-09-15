@@ -16,6 +16,7 @@ interface PromoFormProps {
 export default function PromoForm({ initialData, onSubmit, onCancel, isLoading }: PromoFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<CreatePromoRequest>({
+    valid_days: initialData?.valid_days ?? 127,
     code: initialData?.code || '',
     name: initialData?.name || '',
     description: initialData?.description || '',
@@ -64,6 +65,11 @@ export default function PromoForm({ initialData, onSubmit, onCancel, isLoading }
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!formData.valid_days) {
+      setError('Pilih minimal satu hari berlaku voucher');
+      return;
+    }
 
     // Validation
     if (!formData.code.trim()) {
@@ -262,6 +268,24 @@ export default function PromoForm({ initialData, onSubmit, onCancel, isLoading }
             />
             <p className="text-xs text-gray-500 -mt-3 mb-4">Waktu berakhir: 23:59:59</p>
           </div>
+
+          <fieldset className="mb-4" disabled={isLoading}>
+            <legend className="text-sm font-medium text-gray-700 mb-2">Hari Berlaku Voucher (WIB)</legend>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {[{ label: 'Semua hari', value: 127 }, { label: 'Senin?Jumat', value: 62 }, { label: 'Sabtu?Minggu', value: 65 }].map((preset) => (
+                <button key={preset.value} type="button" onClick={() => setFormData(prev => ({ ...prev, valid_days: preset.value }))} className="rounded border border-teal-600 px-2 py-1 text-xs text-teal-700">{preset.label}</button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[{ label: 'Senin', bit: 2 }, { label: 'Selasa', bit: 4 }, { label: 'Rabu', bit: 8 }, { label: 'Kamis', bit: 16 }, { label: 'Jumat', bit: 32 }, { label: 'Sabtu', bit: 64 }, { label: 'Minggu', bit: 1 }].map((day) => (
+                <label key={day.bit} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" data-testid={`promo-day-${day.label.toLowerCase()}`} checked={!!((formData.valid_days ?? 127) & day.bit)} onChange={() => setFormData(prev => ({ ...prev, valid_days: (prev.valid_days ?? 127) ^ day.bit }))} />
+                  {day.label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Pilih minimal satu hari. Voucher hanya dapat digunakan pada hari yang dicentang.</p>
+          </fieldset>
 
           <div className="mb-4">
             <label className="flex items-center justify-between cursor-pointer group">
