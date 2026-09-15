@@ -2,6 +2,9 @@ import api from './api';
 import type { BranchStock, CreateMenuRequest, CreateMenuResponse, GetMenusResponse } from '../types';
 
 export const menuService = {
+  resetBranchStock: async (branch: string): Promise<void> => {
+    await api.post(`/menu/debug-stock/${branch}/reset`);
+  },
   createMenu: async (data: CreateMenuRequest): Promise<CreateMenuResponse> => {
     const formData = new FormData();
     if (data.branch_stocks) formData.append('branch_stocks', JSON.stringify(data.branch_stocks));

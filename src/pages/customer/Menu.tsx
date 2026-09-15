@@ -5,7 +5,7 @@ import { menuService } from '../../services/menuService';
 import { categoryService } from '../../services/categoryService';
 import Card from '../../components/UI/Card';
 import DateTimeWidget from '../../components/UI/DateTimeWidget';
-import { Search, ShoppingCart, Plus, Minus, ChevronLeft, ChevronRight, Facebook, Instagram, Twitter, Youtube, ChefHat, CheckCircle, Sparkles } from 'lucide-react';
+import { RotateCcw, Search, ShoppingCart, Plus, Minus, ChevronLeft, ChevronRight, Facebook, Instagram, Twitter, Youtube, ChefHat, CheckCircle, Sparkles } from 'lucide-react';
 import type { Menu, Category } from '../../types';
 
 interface CartItem {
@@ -17,6 +17,21 @@ export default function CustomerMenu() {
   const navigate = useNavigate();
   const [branch, setBranch] = useState('jakarta-selatan');
   const [branchNotice, setBranchNotice] = useState('');
+  const [isResettingStock, setIsResettingStock] = useState(false);
+  const resetStock = async () => {
+    if (isResettingStock) return;
+    setIsResettingStock(true);
+    try {
+      await menuService.resetBranchStock(branch);
+      const response = await menuService.getPublicMenus();
+      if (!response.success) throw new Error('Failed to refresh menus');
+      setMenus(response.data);
+      setCart([]);
+      setBranchNotice('Stok cabang kembali ke stok awal. Keranjang dikosongkan.');
+    } catch {
+      setBranchNotice('Gagal mereset atau memuat stok. Silakan coba lagi.');
+    } finally { setIsResettingStock(false); }
+  };
   const [menus, setMenus] = useState<Menu[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -138,7 +153,11 @@ export default function CustomerMenu() {
               />
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
+              <button type="button" aria-label="Debug reset stok cabang" title="Reset stok cabang ke stok awal" data-testid="debug-reset-stock" disabled={isResettingStock} onClick={resetStock} className="rounded-lg border border-gray-300 p-2 hover:bg-gray-200 disabled:opacity-50">
+                <RotateCcw size={18} className={isResettingStock ? 'animate-spin' : ''} />
+              </button>
               <select
+                disabled={isResettingStock}
                 aria-label="Pilih cabang"
                 data-testid="branch-selector"
                 value={branch}
