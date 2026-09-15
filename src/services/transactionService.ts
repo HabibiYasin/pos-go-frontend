@@ -10,6 +10,7 @@ export interface TransactionItem {
 }
 
 export interface CreateTransactionRequest {
+  branch: string;
   customer_name: string;
   customer_phone: string;
   order_type: 'dine_in' | 'take_away';

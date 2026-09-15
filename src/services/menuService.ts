@@ -1,9 +1,10 @@
 import api from './api';
-import type { CreateMenuRequest, CreateMenuResponse, GetMenusResponse } from '../types';
+import type { BranchStock, CreateMenuRequest, CreateMenuResponse, GetMenusResponse } from '../types';
 
 export const menuService = {
   createMenu: async (data: CreateMenuRequest): Promise<CreateMenuResponse> => {
     const formData = new FormData();
+    if (data.branch_stocks) formData.append('branch_stocks', JSON.stringify(data.branch_stocks));
     formData.append('name', data.name);
     formData.append('description', data.description);
     formData.append('price', data.price.toString());
@@ -21,6 +22,7 @@ export const menuService = {
   updateMenu: async (
     menuId: string,
     data: {
+      branch_stocks?: BranchStock[];
       name: string;
       description: string;
       price: number;
@@ -30,6 +32,7 @@ export const menuService = {
     imageFile: File | null
   ): Promise<CreateMenuResponse> => {
     const formData = new FormData();
+    if (data.branch_stocks) formData.append('branch_stocks', JSON.stringify(data.branch_stocks));
     formData.append('name', data.name);
     formData.append('description', data.description);
     formData.append('price', data.price.toString());

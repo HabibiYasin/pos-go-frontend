@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BRANCHES } from '../../constants/branches';
 import { useNavigate } from 'react-router-dom';
 import { menuService } from '../../services/menuService';
 import { categoryService } from '../../services/categoryService';
@@ -14,6 +15,8 @@ interface CartItem {
 
 export default function CustomerMenu() {
   const navigate = useNavigate();
+  const [branch, setBranch] = useState('jakarta-selatan');
+  const [branchNotice, setBranchNotice] = useState('');
   const [menus, setMenus] = useState<Menu[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,12 +59,15 @@ export default function CustomerMenu() {
     fetchCategories();
   }, []);
 
+  const branchStock = (menu: Menu) => menu.branch_stocks?.find(item => item.branch === branch);
+  const stockCount = (menu: Menu) => branchStock(menu)?.stock ?? 0;
+
   // Filter menus
   const filteredMenus = menus.filter((menu) => {
     const matchesSearch = menu.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       menu.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = !selectedCategory || menu.category_id === selectedCategory;
-    return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCategory && branchStock(menu)?.is_available;
   });
 
   // Pagination calculations
@@ -79,6 +85,7 @@ export default function CustomerMenu() {
   const addToCart = (menu: Menu) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.menu.id === menu.id);
+      if (!branchStock(menu)?.is_available || (existingItem?.quantity ?? 0) >= stockCount(menu)) return prevCart;
       if (existingItem) {
         return prevCart.map((item) =>
           item.menu.id === menu.id
@@ -130,7 +137,21 @@ export default function CustomerMenu() {
                 className="h-16 w-auto"
               />
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <select
+                aria-label="Pilih cabang"
+                data-testid="branch-selector"
+                value={branch}
+                onChange={(event) => {
+                  setBranch(event.target.value);
+                  setCart([]);
+                  setCurrentPage(1);
+                  setBranchNotice('Cabang diganti. Keranjang dikosongkan.');
+                }}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2"
+              >
+                {BRANCHES.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
               <DateTimeWidget debug resetDebugOnMount />
               <button
                 onClick={() => setShowCart(true)}
@@ -253,6 +274,7 @@ export default function CustomerMenu() {
           </div>
         </div>
 
+        {branchNotice && <p role="status" className="mb-4 text-sm text-teal-700">{branchNotice}</p>}
         {/* Search and Filter */}
         <Card className="mb-6">
           <div className="flex flex-col sm:flex-row gap-4">
@@ -300,13 +322,13 @@ export default function CustomerMenu() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
               {paginatedMenus.map((menu) => (
-                <Card key={menu.id} className="overflow-hidden hover:shadow-lg transition-shadow flex flex-col">
+                <Card key={menu.id} className={`overflow-hidden transition-shadow flex flex-col ${stockCount(menu) === 0 ? '!bg-gray-200' : 'hover:shadow-lg'}`}>
                   {/* Image */}
                   <div className="relative bg-gray-100 aspect-[4/3] rounded-lg overflow-hidden mb-3">
                     <img
                       src={`${import.meta.env.VITE_API_URL}/${menu.image}`}
                       alt={menu.name}
-                      className="w-full h-full object-cover rounded-lg"
+                      className={`w-full h-full object-cover rounded-lg ${stockCount(menu) === 0 ? 'grayscale opacity-50' : ''}`}
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=No+Image';
                       }}
@@ -323,13 +345,15 @@ export default function CustomerMenu() {
                         {menu.category.name}
                       </span>
                     )}
+                    {stockCount(menu) === 0 ? <p className="text-red-600 font-bold">Stock Habis</p> : <p className="text-sm text-gray-500">Stock: {stockCount(menu)}</p>}
                     <div className="flex items-center justify-between gap-2 mt-auto pt-2">
                       <p className="text-base font-bold text-teal-600">
                         Rp {formatCurrency(menu.price)}
                       </p>
                       <button
                         onClick={() => addToCart(menu)}
-                        className="px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors flex items-center gap-1.5 text-sm whitespace-nowrap"
+                        disabled={(cart.find(item => item.menu.id === menu.id)?.quantity ?? 0) >= stockCount(menu)}
+                        className="disabled:bg-gray-400 disabled:cursor-not-allowed px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors flex items-center gap-1.5 text-sm whitespace-nowrap"
                       >
                         <Plus size={16} />
                         Tambah
@@ -451,6 +475,7 @@ export default function CustomerMenu() {
                           <span className="w-8 text-center font-medium">{item.quantity}</span>
                           <button
                             onClick={() => addToCart(item.menu)}
+                            disabled={item.quantity >= stockCount(item.menu)}
                             className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-100"
                           >
                             <Plus size={16} />
@@ -471,7 +496,7 @@ export default function CustomerMenu() {
                           className="w-full py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium"
                           onClick={() => {
                             setShowCart(false);
-                            navigate('/checkout', { state: { cart } });
+                            navigate('/checkout', { state: { cart, branch } });
                           }}
                         >
                           Checkout

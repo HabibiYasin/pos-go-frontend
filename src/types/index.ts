@@ -54,7 +54,14 @@ export interface Category {
     UpdatedAt?: string;
 }
   
+export interface BranchStock {
+    branch: string;
+    is_available: boolean;
+    stock: number;
+}
+
 export interface Menu {
+    branch_stocks?: BranchStock[];
     id: string;
     name: string;
     description: string;
@@ -68,6 +75,7 @@ export interface Menu {
 }
   
 export interface CreateMenuRequest {
+    branch_stocks?: BranchStock[];
     name: string;
     description: string;
     price: number;

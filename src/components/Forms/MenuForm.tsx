@@ -7,9 +7,11 @@ import Textarea from '../UI/Textarea';
 import Select from '../UI/Select';
 import FileInput from '../UI/FileInput';
 import Alert from '../UI/Alert';
-import type { Category, Menu } from '../../types';
+import { BRANCHES, emptyBranchStocks } from '../../constants/branches';
+import type { BranchStock, Category, Menu } from '../../types';
 
 export interface MenuFormData {
+  branch_stocks: BranchStock[];
   name: string;
   description: string;
   price: number;
@@ -47,6 +49,7 @@ export default function MenuForm({
     reset,
   } = useForm<MenuFormData>({
     defaultValues: {
+      branch_stocks: initialData?.branch_stocks?.length ? initialData.branch_stocks : emptyBranchStocks(),
       name: initialData?.name || '',
       description: initialData?.description || '',
       price: initialData?.price || 0,
@@ -64,6 +67,7 @@ export default function MenuForm({
 
   const isAvailable = watch('is_available');
   const priceValue = watch('price');
+  const branchStocks = watch('branch_stocks');
 
   // Format currency: Rp 25.000
   const formatCurrency = (value: number | string | undefined): string => {
@@ -102,6 +106,7 @@ export default function MenuForm({
   useEffect(() => {
     if (initialData) {
       reset({
+        branch_stocks: initialData.branch_stocks?.length ? initialData.branch_stocks : emptyBranchStocks(),
         name: initialData.name,
         description: initialData.description,
         price: initialData.price,
@@ -112,6 +117,7 @@ export default function MenuForm({
       setFileInputKey((prev) => prev + 1);
     } else {
       reset({
+        branch_stocks: emptyBranchStocks(),
         name: '',
         description: '',
         price: 0,
@@ -125,6 +131,10 @@ export default function MenuForm({
   }, [initialData, reset]);
 
   const onSubmitForm = async (data: MenuFormData) => {
+    if (data.branch_stocks.some(item => !Number.isSafeInteger(item.stock) || item.stock < 0)) {
+      setError('Stok harus berupa bilangan bulat minimal 0');
+      return;
+    }
     // Jika edit mode dan tidak ada file baru, tidak perlu validasi file
     if (!initialData && !selectedFile) {
       setError('Gambar menu wajib diisi');
@@ -137,7 +147,8 @@ export default function MenuForm({
       // Reset form setelah berhasil (jika create mode)
       if (!initialData) {
         reset({
-          name: '',
+          branch_stocks: emptyBranchStocks(),
+        name: '',
           description: '',
           price: 0,
           category_id: '',
@@ -225,6 +236,26 @@ export default function MenuForm({
             error={errors.description?.message}
             {...register('description')}
           />
+
+          <fieldset className="mb-4 space-y-3" disabled={isLoading}>
+            <legend className="text-sm font-medium text-gray-700 mb-2">Tersedia di Cabang:</legend>
+            {BRANCHES.map((branch) => {
+              const index = branchStocks.findIndex(item => item.branch === branch.id);
+              if (index < 0) return null;
+              return (
+                <div key={branch.id} className="flex items-center gap-3 rounded-lg border p-3">
+                  <label className="flex flex-1 items-center gap-2">
+                    <input type="checkbox" {...register(`branch_stocks.${index}.is_available`)} />
+                    {branch.name}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    Stock:
+                    <input aria-label={`Stock ${branch.name}`} type="number" min="0" step="1" className="w-24 rounded border px-2 py-1" {...register(`branch_stocks.${index}.stock`, { valueAsNumber: true })} />
+                  </label>
+                </div>
+              );
+            })}
+          </fieldset>
 
           <div className="mb-4">
             <label className="flex items-center justify-between cursor-pointer group">

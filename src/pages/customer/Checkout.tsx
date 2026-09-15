@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { BRANCHES } from '../../constants/branches';
 import { useDebugDateStore } from '../../store/debugDateStore';
 import { isAxiosError } from 'axios';
 import { prepareMidtrans } from '../../services/midtransService';
@@ -23,6 +24,7 @@ export default function Checkout() {
   const validationVersion = useRef(0);
   const navigate = useNavigate();
   const location = useLocation();
+  const branch = location.state?.branch || 'jakarta-selatan';
   const cart: CartItem[] = location.state?.cart || [];
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -176,6 +178,7 @@ export default function Checkout() {
     try {
       if (formData.payment_method !== 'cash') await prepareMidtrans();
       const requestData: CreateTransactionRequest = {
+        branch,
         customer_name: formData.customer_name,
         customer_phone: formData.customer_phone,
         order_type: formData.order_type,
@@ -308,7 +311,7 @@ export default function Checkout() {
             <div>
               <img src="/logo-dashboard.png" alt="POS Go" className="h-16 w-auto" />
             </div>
-            <DateTimeWidget debug />
+            <div className="flex flex-wrap items-center gap-3"><span className="text-sm font-medium">{BRANCHES.find(item => item.id === branch)?.name}</span><DateTimeWidget debug /></div>
           </div>
         </div>
       </header>
