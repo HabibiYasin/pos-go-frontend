@@ -85,6 +85,14 @@ export default function Checkout() {
     setPromoError(null);
     const subtotal = getSubtotal();
 
+    if (subtotal < promo.min_purchase) {
+      const shortfall = promo.min_purchase - subtotal;
+      setPromoError(`Promo tidak terpenuhi (tambahkan Rp${formatCurrency(shortfall)})`);
+      setSelectedPromo(null);
+      setPromoDiscount(0);
+      return;
+    }
+
     try {
       const result = await validatePromo({
         code: promo.code,
